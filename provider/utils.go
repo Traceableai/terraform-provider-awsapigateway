@@ -27,6 +27,10 @@ func removeDuplicates(arr []string) []string {
 	return newArr
 }
 
+func stringFromArray(values []string) string {
+	return fmt.Sprintf("[%s]", strings.Join(values, ", "))
+}
+
 func getExecutionLogGroupName(apiId string, stageName string) string {
 	return fmt.Sprintf("API-Gateway-Execution-Logs_%s/%s", apiId, stageName)
 }
@@ -49,12 +53,4 @@ func newDiagnostic(severity diag.Severity, summary string) *diag.Diagnostic {
 		Severity: severity,
 		Summary:  summary,
 	}
-}
-
-func errorDiagnostics(summary string) diag.Diagnostics {
-	return newDiagnostics(diag.Error, summary)
-}
-
-func newDiagnostics(severity diag.Severity, summary string) diag.Diagnostics {
-	return diag.Diagnostics{*newDiagnostic(severity, summary)}
 }

@@ -2,10 +2,11 @@ package provider
 
 import (
 	"context"
-
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v1 "github.com/aws/aws-sdk-go-v2/service/apigateway"
 	v2 "github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 )
 
 type apiGatewayAction string
@@ -19,6 +20,66 @@ var (
 	ApiGatewayActions     = []string{string(INCLUDE), string(EXCLUDE)}
 	AccessLogFormatValues = []string{"$context.httpMethod", "$context.domainName", "$context.status", "$context.path"}
 )
+
+type Summary string
+
+const (
+	WrongSyntax                          Summary = "api gateway syntax is wrong"
+	FullRequestAndResponseLogNotEnabled  Summary = "Full Request and Response Logs not enabled"
+	ExecutionLogErrorOnly                Summary = "Execution Logs set to Errors Only"
+	ExecutionLogNotEnabled               Summary = "Execution Logs not enabled"
+	AccessLogNotEnabledREST              Summary = "REST API Access Logs not enabled"
+	AccessLogNotEnabledHTTP              Summary = "HTTP API Access Logs not enabled"
+	AccessLogFormatNotJson               Summary = "Access Log Format is not JSON parsable"
+	AccessLogFormatMissingRequiredValues Summary = "Access Log Format is missing required values"
+)
+
+type MapDiagnostics struct {
+	diagnostics      diag.Diagnostics
+	warnDiagnostics  map[string][]string
+	errorDiagnostics map[string][]string
+}
+
+type Option func(summary *string)
+
+func WithMissingValues(values []string) Option {
+	return func(summary *string) {
+		*summary = fmt.Sprintf("%s %s", *summary, stringFromArray(values))
+	}
+}
+func (s Summary) new(opts ...Option) string {
+	summary := string(s)
+	for _, opt := range opts {
+		opt(&summary)
+	}
+	return summary
+}
+
+func (m *MapDiagnostics) add(diagnostic *diag.Diagnostic) {
+	m.diagnostics = append(m.diagnostics, *diagnostic)
+}
+func (m *MapDiagnostics) addError(summary string, value string) {
+	m.errorDiagnostics[summary] = append(m.errorDiagnostics[summary], value)
+}
+func (m *MapDiagnostics) addWarn(summary string, value string) {
+	m.warnDiagnostics[summary] = append(m.warnDiagnostics[summary], value)
+}
+func (m *MapDiagnostics) getDiagnostics() diag.Diagnostics {
+	diagnostics := m.diagnostics
+	for summary, values := range m.warnDiagnostics {
+		consolidatedSummary := fmt.Sprintf("%s for %s", summary, stringFromArray(values))
+		diagnostics = append(diagnostics, *warnDiagnostic(consolidatedSummary))
+	}
+	for summary, values := range m.errorDiagnostics {
+		consolidatedSummary := fmt.Sprintf("%s for %s", summary, stringFromArray(values))
+		diagnostics = append(diagnostics, *errorDiagnostic(consolidatedSummary))
+	}
+	return diagnostics
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//                           apiGatewayProvider                              //
+///////////////////////////////////////////////////////////////////////////////
 
 type AwsApiGatewayProvider interface {
 	getAwsGetRestApisPaginator() AwsGetRestApisPaginator

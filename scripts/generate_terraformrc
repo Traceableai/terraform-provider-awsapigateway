@@ -11,7 +11,7 @@ cat << EOF
 # e.g. scripts/generate_terraformrc > ~/.terraformrc
 provider_installation {
   dev_overrides {
-      "kaushal02/awsapigateway" = "${gobin}"
+      "Traceableai/awsapigateway" = "${gobin}"
   }
 
   # For all other providers, install them directly from their origin provider

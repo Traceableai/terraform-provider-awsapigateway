@@ -16,6 +16,6 @@ fmt:
 	go fmt ./...
 
 generatemocks:
-	mockgen -destination=provider/mocks/apigatewayprovider.go -package=mocks github.com/kaushal02/terraform-provider-awsapigateway/provider AwsApiGatewayProvider
+	mockgen -destination=provider/mocks/apigatewayprovider.go -package=mocks github.com/Traceableai/terraform-provider-awsapigateway/provider AwsApiGatewayProvider
 
 .PHONY: build testacc vet fmt

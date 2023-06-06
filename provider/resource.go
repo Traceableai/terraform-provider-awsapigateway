@@ -56,14 +56,19 @@ func resourceCreateUpdate(ctx context.Context, d *schema.ResourceData, meta inte
 	apiGateways := d.Get("api_gateways").([]interface{})
 	action := d.Get("action").(string)
 	ignoreAccessLogSettings := d.Get("ignore_access_log_settings").(bool)
-	diagnostics, logGroupNames := checkApiGateways(apiGateways, action == string(EXCLUDE), ignoreAccessLogSettings, meta)
+	mapDiagnostics := &MapDiagnostics{
+		diagnostics:      diag.Diagnostics{},
+		warnDiagnostics:  make(map[string][]string),
+		errorDiagnostics: make(map[string][]string),
+	}
+	logGroupNames := getLogGroupNames(apiGateways, action == string(EXCLUDE), ignoreAccessLogSettings, meta, mapDiagnostics)
 	if d.Id() == "" {
 		d.SetId(uuid.New().String())
 	}
 	if err := d.Set("log_group_names", logGroupNames); err != nil {
-		return diag.FromErr(err)
+		mapDiagnostics.add(errorDiagnostic(err.Error()))
 	}
-	return diagnostics
+	return mapDiagnostics.getDiagnostics()
 }
 
 func resourceRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -75,12 +80,12 @@ func resourceDelete(ctx context.Context, d *schema.ResourceData, meta interface{
 	return nil
 }
 
-func checkApiGateways(apiGateways []interface{}, exclude bool, ignoreAccessLogSettings bool, meta interface{}) (diag.Diagnostics, []string) {
-	var diagnostics diag.Diagnostics
+func getLogGroupNames(apiGateways []interface{}, exclude bool, ignoreAccessLogSettings bool, meta interface{}, mapDiagnostics *MapDiagnostics) []string {
 	var summary string
 	if !exclude && len(apiGateways) == 0 {
 		summary = "api_gateways cannot be empty when action is include."
-		return errorDiagnostics(summary), []string{}
+		mapDiagnostics.add(errorDiagnostic(summary))
+		return []string{}
 	}
 
 	// apiAllStages stores api ids where all stages need to be considered
@@ -89,7 +94,8 @@ func checkApiGateways(apiGateways []interface{}, exclude bool, ignoreAccessLogSe
 	var apiAllStages []string
 	apiWithStage := make(map[string][]string)
 	for _, elem := range apiGateways {
-		apiDetails := strings.Split(elem.(string), "/")
+		value := elem.(string)
+		apiDetails := strings.Split(value, "/")
 		if len(apiDetails) == 2 {
 			if !contains(apiAllStages, apiDetails[0]) {
 				apiWithStage[apiDetails[0]] = append(apiWithStage[apiDetails[0]], apiDetails[1])
@@ -100,22 +106,17 @@ func checkApiGateways(apiGateways []interface{}, exclude bool, ignoreAccessLogSe
 				delete(apiWithStage, apiDetails[0])
 			}
 		} else {
-			summary = fmt.Sprintf("api gateway syntax is wrong for %s", elem)
-			diagnostics = append(diagnostics, *errorDiagnostic(summary))
+			mapDiagnostics.addError(WrongSyntax.new(), value)
 		}
 	}
 
 	conn := meta.(AwsApiGatewayProvider)
-	restApiGatewaysDiagnostics, logGroupNames := checkRestApiGateways(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings)
-	apiGatewayV2Diagnostics, apiGatewayV2LogGroupNames := checkApiGatewaysV2(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings)
-	diagnostics = append(diagnostics, restApiGatewaysDiagnostics...)
-	diagnostics = append(diagnostics, apiGatewayV2Diagnostics...)
-	return diagnostics, removeDuplicates(append(logGroupNames, apiGatewayV2LogGroupNames...))
+	logGroupNames := getLogGroupNamesRestApis(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings, mapDiagnostics)
+	apiGatewayV2LogGroupNames := getLogGroupNamesHttpApis(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings, mapDiagnostics)
+	return removeDuplicates(append(logGroupNames, apiGatewayV2LogGroupNames...))
 }
 
-func checkRestApiGateways(conn AwsApiGatewayProvider, apiAllStages []string, apiWithStage map[string][]string, exclude bool, ignoreAccessLogSettings bool) (diag.Diagnostics, []string) {
-	var diagnostics diag.Diagnostics
-	var summary string
+func getLogGroupNamesRestApis(conn AwsApiGatewayProvider, apiAllStages []string, apiWithStage map[string][]string, exclude bool, ignoreAccessLogSettings bool, mapDiagnostics *MapDiagnostics) []string {
 	// apiStageMappingRest is a map of api id to list of api stages that need to be considered
 	// if the value list is empty, it means that all stages in this api should be considered
 	apiStageMappingRest := make(map[string][]string)
@@ -123,8 +124,9 @@ func checkRestApiGateways(conn AwsApiGatewayProvider, apiAllStages []string, api
 	for restApisPaginator.HasMorePages() {
 		res, err := restApisPaginator.NextPage(context.TODO())
 		if err != nil {
-			summary = fmt.Sprintf("Error while invoking getRestApis sdk call: %s", err.Error())
-			diagnostics = append(diagnostics, *errorDiagnostic(summary))
+			summary := fmt.Sprintf("Error while invoking getRestApis sdk call: %s", err.Error())
+			mapDiagnostics.add(errorDiagnostic(summary))
+			continue
 		}
 		for _, restApi := range res.Items {
 			apiId := *restApi.Id
@@ -136,13 +138,11 @@ func checkRestApiGateways(conn AwsApiGatewayProvider, apiAllStages []string, api
 			}
 		}
 	}
-	stagesDiagnostics, logGroupNames := checkRestApiGatewayStages(conn, apiStageMappingRest, exclude, ignoreAccessLogSettings)
-	diagnostics = append(diagnostics, stagesDiagnostics...)
-	return diagnostics, logGroupNames
+	logGroupNames := getLogGroupNamesRestApisHelper(conn, apiStageMappingRest, exclude, ignoreAccessLogSettings, mapDiagnostics)
+	return logGroupNames
 }
 
-func checkApiGatewaysV2(conn AwsApiGatewayProvider, apiAllStages []string, apiWithStage map[string][]string, exclude bool, ignoreAccessLogSettings bool) (diag.Diagnostics, []string) {
-	var diagnostics diag.Diagnostics
+func getLogGroupNamesHttpApis(conn AwsApiGatewayProvider, apiAllStages []string, apiWithStage map[string][]string, exclude bool, ignoreAccessLogSettings bool, mapDiagnostics *MapDiagnostics) []string {
 	var summary string
 	// apiStageMappingRest is a map of api id to list of api stages that need to be considered
 	// if the value list is empty, it means that all stages in this api should be considered
@@ -151,7 +151,8 @@ func checkApiGatewaysV2(conn AwsApiGatewayProvider, apiAllStages []string, apiWi
 	res, err := apiGatewayV2Client.GetApis(context.TODO(), &v2.GetApisInput{})
 	if err != nil {
 		summary = fmt.Sprintf("Error while invoking getApis sdk call: %s", err.Error())
-		diagnostics = append(diagnostics, *errorDiagnostic(summary))
+		mapDiagnostics.add(errorDiagnostic(summary))
+		return []string{}
 	}
 	for _, httpApi := range res.Items {
 		apiId := *httpApi.ApiId
@@ -163,28 +164,26 @@ func checkApiGatewaysV2(conn AwsApiGatewayProvider, apiAllStages []string, apiWi
 		}
 	}
 	if !ignoreAccessLogSettings {
-		stagesDiagnostics, logGroupNames := checkApiGatewayV2Stages(conn, apiStageMappingV2, exclude)
-		diagnostics = append(diagnostics, stagesDiagnostics...)
-		return diagnostics, logGroupNames
+		return getLogGroupNamesHttpApisHelper(conn, apiStageMappingV2, exclude, mapDiagnostics)
 	}
-	return diagnostics, []string{}
+	return []string{}
 }
 
-func checkRestApiGatewayStages(conn AwsApiGatewayProvider, apiStageMappingRest map[string][]string, exclude bool, ignoreAccessLogSettings bool) (diag.Diagnostics, []string) {
-	var diagnostics diag.Diagnostics
+func getLogGroupNamesRestApisHelper(conn AwsApiGatewayProvider, apiStageMappingRest map[string][]string, exclude bool, ignoreAccessLogSettings bool, mapDiagnostics *MapDiagnostics) []string {
 	var logGroupNames []string
-	var summary string
 	apiGatewayClient := conn.getApiGatewayClient()
 	for apiId, apiStages := range apiStageMappingRest {
 		res, err := apiGatewayClient.GetStages(context.TODO(), &v1.GetStagesInput{
 			RestApiId: &apiId,
 		})
 		if err != nil {
-			summary = fmt.Sprintf("Error while invoking getStages sdk call: %s", err.Error())
-			diagnostics = append(diagnostics, *errorDiagnostic(summary))
+			summary := fmt.Sprintf("Error while invoking getStages sdk call: %s", err.Error())
+			mapDiagnostics.add(errorDiagnostic(summary))
+			continue
 		}
 		for _, stage := range res.Item {
 			stageName := *(stage.StageName)
+			apiIdWithStageName := strings.Join([]string{apiId, stageName}, "/")
 			if len(apiStages) > 0 && contains(apiStages, stageName) == exclude {
 				continue
 			}
@@ -192,77 +191,62 @@ func checkRestApiGatewayStages(conn AwsApiGatewayProvider, apiStageMappingRest m
 				if *(settings.LoggingLevel) == "INFO" && settings.DataTraceEnabled {
 					logGroupNames = append(logGroupNames, getExecutionLogGroupName(apiId, stageName))
 				} else if *(settings.LoggingLevel) == "INFO" {
-					summary = fmt.Sprintf("Full Request and Response Logs not enabled for API %s stage %s", apiId, stageName)
-					diagnostics = append(diagnostics, *warnDiagnostic(summary))
+					mapDiagnostics.addWarn(FullRequestAndResponseLogNotEnabled.new(), apiIdWithStageName)
 				} else if *(settings.LoggingLevel) == "ERROR" {
-					summary = fmt.Sprintf("Execution logs set to Errors Only for API %s stage %s", apiId, stageName)
-					diagnostics = append(diagnostics, *warnDiagnostic(summary))
+					mapDiagnostics.addWarn(ExecutionLogErrorOnly.new(), apiIdWithStageName)
 				} else {
-					summary = fmt.Sprintf("Execution logs not enabled for API %s stage %s", apiId, stageName)
-					diagnostics = append(diagnostics, *warnDiagnostic(summary))
+					mapDiagnostics.addWarn(ExecutionLogNotEnabled.new(), apiIdWithStageName)
 				}
 			}
 			if ignoreAccessLogSettings {
 				continue
 			}
 			if stage.AccessLogSettings == nil || stage.AccessLogSettings.DestinationArn == nil {
-				summary = fmt.Sprintf("Access logs not enabled for REST API %s stage %s", apiId, stageName)
-				diagnostics = append(diagnostics, *warnDiagnostic(summary))
-			} else {
-				diagnosticAccessLog := verifyAccessLogFormat(*(stage.AccessLogSettings.Format))
-				if diagnosticAccessLog != nil {
-					diagnosticAccessLog.Summary = fmt.Sprintf("%s for API %s stage %s", diagnosticAccessLog.Summary, apiId, stageName)
-					diagnostics = append(diagnostics, *diagnosticAccessLog)
-				} else {
-					logGroupNames = append(logGroupNames, getAccessLogGroupNameFromArn(*(stage.AccessLogSettings.DestinationArn)))
-				}
+				mapDiagnostics.addWarn(AccessLogNotEnabledREST.new(), apiIdWithStageName)
+			} else if verifyAccessLogFormat(*(stage.AccessLogSettings.Format), apiIdWithStageName, mapDiagnostics) {
+				logGroupNames = append(logGroupNames, getAccessLogGroupNameFromArn(*(stage.AccessLogSettings.DestinationArn)))
 			}
 		}
 	}
-	return diagnostics, logGroupNames
+	return logGroupNames
 }
 
-func checkApiGatewayV2Stages(conn AwsApiGatewayProvider, apiStageMappingV2 map[string][]string, exclude bool) (diag.Diagnostics, []string) {
-	var diagnostics diag.Diagnostics
+func getLogGroupNamesHttpApisHelper(conn AwsApiGatewayProvider, apiStageMappingV2 map[string][]string, exclude bool, mapDiagnostics *MapDiagnostics) []string {
 	var logGroupNames []string
-	var summary string
 	apiGatewayV2Client := conn.getApiGatewayV2Client()
 	for apiId, apiStages := range apiStageMappingV2 {
 		res, err := apiGatewayV2Client.GetStages(context.TODO(), &v2.GetStagesInput{
 			ApiId: &apiId,
 		})
 		if err != nil {
-			summary = fmt.Sprintf("Error while invoking getStages sdk call: %s", err.Error())
-			diagnostics = append(diagnostics, *errorDiagnostic(summary))
+			summary := fmt.Sprintf("Error while invoking getStages sdk call: %s", err.Error())
+			mapDiagnostics.add(errorDiagnostic(summary))
+			continue
 		}
 		for _, stage := range res.Items {
 			stageName := *(stage.StageName)
+			apiIdWithStageName := strings.Join([]string{apiId, stageName}, "/")
 			if len(apiStages) > 0 && contains(apiStages, stageName) == exclude {
 				continue
 			}
 			if stage.AccessLogSettings == nil || stage.AccessLogSettings.DestinationArn == nil {
-				summary = fmt.Sprintf("Access logs not enabled for REST API %s stage %s", apiId, stageName)
-				diagnostics = append(diagnostics, *warnDiagnostic(summary))
-			} else {
-				diagnosticAccessLog := verifyAccessLogFormat(*(stage.AccessLogSettings.Format))
-				if diagnosticAccessLog != nil {
-					diagnosticAccessLog.Summary = fmt.Sprintf("%s for API %s stage %s", diagnosticAccessLog.Summary, apiId, stageName)
-					diagnostics = append(diagnostics, *diagnosticAccessLog)
-				} else {
-					logGroupNames = append(logGroupNames, getAccessLogGroupNameFromArn(*(stage.AccessLogSettings.DestinationArn)))
-				}
+				mapDiagnostics.addWarn(AccessLogNotEnabledHTTP.new(), apiIdWithStageName)
+			} else if verifyAccessLogFormat(*(stage.AccessLogSettings.Format), apiIdWithStageName, mapDiagnostics) {
+				logGroupNames = append(logGroupNames, getAccessLogGroupNameFromArn(*(stage.AccessLogSettings.DestinationArn)))
 			}
 		}
 	}
-	return diagnostics, logGroupNames
+	return logGroupNames
 }
 
-func verifyAccessLogFormat(format string) *diag.Diagnostic {
+func verifyAccessLogFormat(format string, apiIdWithStageName string, mapDiagnostics *MapDiagnostics) bool {
 	var parsed map[string]string
 	var foundValues []string
+	var missingValues []string
 	if err := json.Unmarshal([]byte(format), &parsed); err != nil {
 		if err = json.Unmarshal([]byte("{"+format+"}"), &parsed); err != nil {
-			return warnDiagnostic("Access log format is not JSON parsable")
+			mapDiagnostics.addWarn(AccessLogFormatNotJson.new(), apiIdWithStageName)
+			return false
 		}
 	}
 	for _, value := range parsed {
@@ -270,14 +254,14 @@ func verifyAccessLogFormat(format string) *diag.Diagnostic {
 			foundValues = append(foundValues, value)
 		}
 	}
-	var missingValues []string
 	for _, value := range AccessLogFormatValues {
 		if !contains(foundValues, value) {
 			missingValues = append(missingValues, value)
 		}
 	}
 	if len(missingValues) > 0 {
-		return warnDiagnostic(fmt.Sprintf("Access log format is missing required values %v", missingValues))
+		mapDiagnostics.addWarn(AccessLogFormatMissingRequiredValues.new(WithMissingValues(missingValues)), apiIdWithStageName)
+		return false
 	}
-	return nil
+	return true
 }

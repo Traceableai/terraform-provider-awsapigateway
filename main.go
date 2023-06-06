@@ -1,8 +1,8 @@
 package main
 
 import (
+	"github.com/Traceableai/terraform-provider-awsapigateway/provider"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/plugin"
-	"github.com/kaushal02/terraform-provider-awsapigateway/provider"
 )
 
 // Generate the Terraform provider documentation using `tfplugindocs`:
