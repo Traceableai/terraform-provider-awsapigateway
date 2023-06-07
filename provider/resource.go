@@ -191,18 +191,18 @@ func getLogGroupNamesRestApisHelper(conn AwsApiGatewayProvider, apiStageMappingR
 				if *(settings.LoggingLevel) == "INFO" && settings.DataTraceEnabled {
 					logGroupNames = append(logGroupNames, getExecutionLogGroupName(apiId, stageName))
 				} else if *(settings.LoggingLevel) == "INFO" {
-					mapDiagnostics.addWarn(FullRequestAndResponseLogNotEnabled.new(), apiIdWithStageName)
+					mapDiagnostics.addError(FullRequestAndResponseLogNotEnabled.new(), apiIdWithStageName)
 				} else if *(settings.LoggingLevel) == "ERROR" {
-					mapDiagnostics.addWarn(ExecutionLogErrorOnly.new(), apiIdWithStageName)
+					mapDiagnostics.addError(ExecutionLogErrorOnly.new(), apiIdWithStageName)
 				} else {
-					mapDiagnostics.addWarn(ExecutionLogNotEnabled.new(), apiIdWithStageName)
+					mapDiagnostics.addError(ExecutionLogNotEnabled.new(), apiIdWithStageName)
 				}
 			}
 			if ignoreAccessLogSettings {
 				continue
 			}
 			if stage.AccessLogSettings == nil || stage.AccessLogSettings.DestinationArn == nil {
-				mapDiagnostics.addWarn(AccessLogNotEnabledREST.new(), apiIdWithStageName)
+				mapDiagnostics.addError(AccessLogNotEnabledREST.new(), apiIdWithStageName)
 			} else if verifyAccessLogFormat(*(stage.AccessLogSettings.Format), apiIdWithStageName, mapDiagnostics) {
 				logGroupNames = append(logGroupNames, getAccessLogGroupNameFromArn(*(stage.AccessLogSettings.DestinationArn)))
 			}
@@ -230,7 +230,7 @@ func getLogGroupNamesHttpApisHelper(conn AwsApiGatewayProvider, apiStageMappingV
 				continue
 			}
 			if stage.AccessLogSettings == nil || stage.AccessLogSettings.DestinationArn == nil {
-				mapDiagnostics.addWarn(AccessLogNotEnabledHTTP.new(), apiIdWithStageName)
+				mapDiagnostics.addError(AccessLogNotEnabledHTTP.new(), apiIdWithStageName)
 			} else if verifyAccessLogFormat(*(stage.AccessLogSettings.Format), apiIdWithStageName, mapDiagnostics) {
 				logGroupNames = append(logGroupNames, getAccessLogGroupNameFromArn(*(stage.AccessLogSettings.DestinationArn)))
 			}
@@ -245,7 +245,7 @@ func verifyAccessLogFormat(format string, apiIdWithStageName string, mapDiagnost
 	var missingValues []string
 	if err := json.Unmarshal([]byte(format), &parsed); err != nil {
 		if err = json.Unmarshal([]byte("{"+format+"}"), &parsed); err != nil {
-			mapDiagnostics.addWarn(AccessLogFormatNotJson.new(), apiIdWithStageName)
+			mapDiagnostics.addError(AccessLogFormatNotJson.new(), apiIdWithStageName)
 			return false
 		}
 	}
@@ -260,7 +260,7 @@ func verifyAccessLogFormat(format string, apiIdWithStageName string, mapDiagnost
 		}
 	}
 	if len(missingValues) > 0 {
-		mapDiagnostics.addWarn(AccessLogFormatMissingRequiredValues.new(WithMissingValues(missingValues)), apiIdWithStageName)
+		mapDiagnostics.addError(AccessLogFormatMissingRequiredValues.new(WithMissingValues(missingValues)), apiIdWithStageName)
 		return false
 	}
 	return true
