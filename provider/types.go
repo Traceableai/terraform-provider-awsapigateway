@@ -17,8 +17,8 @@ const (
 )
 
 var (
-	ApiGatewayActions     = []string{string(INCLUDE), string(EXCLUDE)}
-	AccessLogFormatValues = []string{"$context.httpMethod", "$context.domainName", "$context.status", "$context.path"}
+	ApiGatewayActions              = []string{string(INCLUDE), string(EXCLUDE)}
+	AccessLogFormatMandatoryValues = []string{"$context.httpMethod", "$context.domainName", "$context.status", "$context.path"}
 )
 
 type Summary string
@@ -32,7 +32,12 @@ const (
 	AccessLogNotEnabledHTTP              Summary = "HTTP API Access Logs not enabled"
 	AccessLogFormatNotJson               Summary = "Access Log Format is not JSON parsable"
 	AccessLogFormatMissingRequiredValues Summary = "Access Log Format is missing required values"
+	AccessLogFormatKeyMismatch           Summary = "Access Log Format has conflicting keys"
 )
+
+type AccessLogFormatMap struct {
+	valueToKey map[string]string
+}
 
 type MapDiagnostics struct {
 	diagnostics      diag.Diagnostics
@@ -45,6 +50,11 @@ type Option func(summary *string)
 func WithMissingValues(values []string) Option {
 	return func(summary *string) {
 		*summary = fmt.Sprintf("%s %s", *summary, stringFromArray(values))
+	}
+}
+func WithLogGroupName(logGroupName string) Option {
+	return func(summary *string) {
+		*summary = fmt.Sprintf("%s in log group %s", *summary, logGroupName)
 	}
 }
 func (s Summary) new(opts ...Option) string {

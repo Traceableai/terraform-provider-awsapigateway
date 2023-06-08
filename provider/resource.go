@@ -111,12 +111,14 @@ func getLogGroupNames(apiGateways []interface{}, exclude bool, ignoreAccessLogSe
 	}
 
 	conn := meta.(AwsApiGatewayProvider)
-	logGroupNames := getLogGroupNamesRestApis(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings, mapDiagnostics)
-	apiGatewayV2LogGroupNames := getLogGroupNamesHttpApis(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings, mapDiagnostics)
+	accessLogFormatKeysMap := make(map[string]AccessLogFormatMap)
+	logGroupNames := getLogGroupNamesRestApis(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings, accessLogFormatKeysMap, mapDiagnostics)
+	apiGatewayV2LogGroupNames := getLogGroupNamesHttpApis(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings, accessLogFormatKeysMap, mapDiagnostics)
 	return removeDuplicates(append(logGroupNames, apiGatewayV2LogGroupNames...))
 }
 
-func getLogGroupNamesRestApis(conn AwsApiGatewayProvider, apiAllStages []string, apiWithStage map[string][]string, exclude bool, ignoreAccessLogSettings bool, mapDiagnostics *MapDiagnostics) []string {
+func getLogGroupNamesRestApis(conn AwsApiGatewayProvider, apiAllStages []string, apiWithStage map[string][]string,
+	exclude bool, ignoreAccessLogSettings bool, accessLogFormatKeysMap map[string]AccessLogFormatMap, mapDiagnostics *MapDiagnostics) []string {
 	// apiStageMappingRest is a map of api id to list of api stages that need to be considered
 	// if the value list is empty, it means that all stages in this api should be considered
 	apiStageMappingRest := make(map[string][]string)
@@ -138,11 +140,12 @@ func getLogGroupNamesRestApis(conn AwsApiGatewayProvider, apiAllStages []string,
 			}
 		}
 	}
-	logGroupNames := getLogGroupNamesRestApisHelper(conn, apiStageMappingRest, exclude, ignoreAccessLogSettings, mapDiagnostics)
+	logGroupNames := getLogGroupNamesRestApisHelper(conn, apiStageMappingRest, exclude, ignoreAccessLogSettings, accessLogFormatKeysMap, mapDiagnostics)
 	return logGroupNames
 }
 
-func getLogGroupNamesHttpApis(conn AwsApiGatewayProvider, apiAllStages []string, apiWithStage map[string][]string, exclude bool, ignoreAccessLogSettings bool, mapDiagnostics *MapDiagnostics) []string {
+func getLogGroupNamesHttpApis(conn AwsApiGatewayProvider, apiAllStages []string, apiWithStage map[string][]string, exclude bool,
+	ignoreAccessLogSettings bool, accessLogFormatKeysMap map[string]AccessLogFormatMap, mapDiagnostics *MapDiagnostics) []string {
 	var summary string
 	// apiStageMappingRest is a map of api id to list of api stages that need to be considered
 	// if the value list is empty, it means that all stages in this api should be considered
@@ -164,12 +167,13 @@ func getLogGroupNamesHttpApis(conn AwsApiGatewayProvider, apiAllStages []string,
 		}
 	}
 	if !ignoreAccessLogSettings {
-		return getLogGroupNamesHttpApisHelper(conn, apiStageMappingV2, exclude, mapDiagnostics)
+		return getLogGroupNamesHttpApisHelper(conn, apiStageMappingV2, exclude, accessLogFormatKeysMap, mapDiagnostics)
 	}
 	return []string{}
 }
 
-func getLogGroupNamesRestApisHelper(conn AwsApiGatewayProvider, apiStageMappingRest map[string][]string, exclude bool, ignoreAccessLogSettings bool, mapDiagnostics *MapDiagnostics) []string {
+func getLogGroupNamesRestApisHelper(conn AwsApiGatewayProvider, apiStageMappingRest map[string][]string, exclude bool,
+	ignoreAccessLogSettings bool, accessLogFormatKeysMap map[string]AccessLogFormatMap, mapDiagnostics *MapDiagnostics) []string {
 	var logGroupNames []string
 	apiGatewayClient := conn.getApiGatewayClient()
 	for apiId, apiStages := range apiStageMappingRest {
@@ -203,15 +207,19 @@ func getLogGroupNamesRestApisHelper(conn AwsApiGatewayProvider, apiStageMappingR
 			}
 			if stage.AccessLogSettings == nil || stage.AccessLogSettings.DestinationArn == nil {
 				mapDiagnostics.addError(AccessLogNotEnabledREST.new(), apiIdWithStageName)
-			} else if verifyAccessLogFormat(*(stage.AccessLogSettings.Format), apiIdWithStageName, mapDiagnostics) {
-				logGroupNames = append(logGroupNames, getAccessLogGroupNameFromArn(*(stage.AccessLogSettings.DestinationArn)))
+			} else {
+				logGroupName := getAccessLogGroupNameFromArn(*(stage.AccessLogSettings.DestinationArn))
+				if verifyAccessLogFormat(*(stage.AccessLogSettings.Format), apiIdWithStageName, logGroupName, accessLogFormatKeysMap, mapDiagnostics) {
+					logGroupNames = append(logGroupNames, logGroupName)
+				}
 			}
 		}
 	}
 	return logGroupNames
 }
 
-func getLogGroupNamesHttpApisHelper(conn AwsApiGatewayProvider, apiStageMappingV2 map[string][]string, exclude bool, mapDiagnostics *MapDiagnostics) []string {
+func getLogGroupNamesHttpApisHelper(conn AwsApiGatewayProvider, apiStageMappingV2 map[string][]string, exclude bool,
+	accessLogFormatKeysMap map[string]AccessLogFormatMap, mapDiagnostics *MapDiagnostics) []string {
 	var logGroupNames []string
 	apiGatewayV2Client := conn.getApiGatewayV2Client()
 	for apiId, apiStages := range apiStageMappingV2 {
@@ -231,15 +239,20 @@ func getLogGroupNamesHttpApisHelper(conn AwsApiGatewayProvider, apiStageMappingV
 			}
 			if stage.AccessLogSettings == nil || stage.AccessLogSettings.DestinationArn == nil {
 				mapDiagnostics.addError(AccessLogNotEnabledHTTP.new(), apiIdWithStageName)
-			} else if verifyAccessLogFormat(*(stage.AccessLogSettings.Format), apiIdWithStageName, mapDiagnostics) {
-				logGroupNames = append(logGroupNames, getAccessLogGroupNameFromArn(*(stage.AccessLogSettings.DestinationArn)))
+			} else {
+				logGroupName := getAccessLogGroupNameFromArn(*(stage.AccessLogSettings.DestinationArn))
+				if verifyAccessLogFormat(*(stage.AccessLogSettings.Format), apiIdWithStageName, logGroupName, accessLogFormatKeysMap, mapDiagnostics) {
+					logGroupNames = append(logGroupNames, logGroupName)
+				}
 			}
 		}
 	}
 	return logGroupNames
 }
 
-func verifyAccessLogFormat(format string, apiIdWithStageName string, mapDiagnostics *MapDiagnostics) bool {
+func verifyAccessLogFormat(format string, apiIdWithStageName string, logGroupName string,
+	accessLogFormatKeysMap map[string]AccessLogFormatMap, mapDiagnostics *MapDiagnostics) bool {
+
 	var parsed map[string]string
 	var foundValues []string
 	var missingValues []string
@@ -249,12 +262,16 @@ func verifyAccessLogFormat(format string, apiIdWithStageName string, mapDiagnost
 			return false
 		}
 	}
-	for _, value := range parsed {
-		if contains(AccessLogFormatValues, value) {
+
+	accessLogKeys := make(map[string]string)
+	for key, value := range parsed {
+		accessLogKeys[value] = key
+		if contains(AccessLogFormatMandatoryValues, value) {
 			foundValues = append(foundValues, value)
 		}
 	}
-	for _, value := range AccessLogFormatValues {
+
+	for _, value := range AccessLogFormatMandatoryValues {
 		if !contains(foundValues, value) {
 			missingValues = append(missingValues, value)
 		}
@@ -262,6 +279,21 @@ func verifyAccessLogFormat(format string, apiIdWithStageName string, mapDiagnost
 	if len(missingValues) > 0 {
 		mapDiagnostics.addError(AccessLogFormatMissingRequiredValues.new(WithMissingValues(missingValues)), apiIdWithStageName)
 		return false
+	}
+	if storedMap, found := accessLogFormatKeysMap[logGroupName]; found {
+		for value, key := range accessLogKeys {
+			if storedKey, valueFound := storedMap.valueToKey[value]; valueFound {
+				if key != storedKey {
+					mapDiagnostics.addWarn(AccessLogFormatKeyMismatch.new(WithLogGroupName(logGroupName)), value)
+				}
+			} else {
+				storedMap.valueToKey[value] = key
+			}
+		}
+	} else {
+		accessLogFormatKeysMap[logGroupName] = AccessLogFormatMap{
+			valueToKey: accessLogKeys,
+		}
 	}
 	return true
 }
