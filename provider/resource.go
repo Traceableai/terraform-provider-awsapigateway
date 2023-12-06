@@ -251,22 +251,25 @@ func getLogGroupNamesHttpApisHelper(conn AwsApiGatewayProvider, apiStageMappingV
 	return logGroupNames
 }
 
+func fixAccessLogFormatMissingQuotes(format string) string {
+	re := regexp.MustCompile(`:\s*(\$context[.\w]*)`)
+	return string(re.ReplaceAll([]byte(format), []byte(":\"$1\"")))
+}
+
 func verifyAccessLogFormat(format string, apiIdWithStageName string, logGroupName string,
 	accessLogFormatKeysMap map[string]AccessLogFormatMap, mapDiagnostics *MapDiagnostics) bool {
 
-	re := regexp.MustCompile(`:\s*(\$context[.\w]*)`)
-	fixedFormat := re.ReplaceAll([]byte(format), []byte(":\"$1\""))
-
 	var parsed map[string]interface{}
-	var foundValues []string
-	var missingValues []string
-	if err := json.Unmarshal(fixedFormat, &parsed); err != nil {
-		if err = json.Unmarshal([]byte("{"+string(fixedFormat)+"}"), &parsed); err != nil {
+	fixedFormat := fixAccessLogFormatMissingQuotes(format)
+	if err := json.Unmarshal([]byte(fixedFormat), &parsed); err != nil {
+		if err = json.Unmarshal([]byte("{"+fixedFormat+"}"), &parsed); err != nil {
 			mapDiagnostics.addError(AccessLogFormatNotJson.new(), apiIdWithStageName)
 			return false
 		}
 	}
 
+	var foundValues []string
+	var missingValues []string
 	accessLogKeys := make(map[string]string)
 	for key, value := range Flatten(parsed) {
 		valueStr := value.(string)

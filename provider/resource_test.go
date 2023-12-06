@@ -61,3 +61,43 @@ func TestFlatten(t *testing.T) {
 		})
 	}
 }
+
+func TestFixAccessLogFormatMissingQuotes(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "not json",
+			input:    "\"key1\": \"value1\", \"key2\", \"key3\"",
+			expected: "\"key1\": \"value1\", \"key2\", \"key3\"",
+		},
+		{
+			name:     "flat json: no values with missing quotes",
+			input:    "{\"key1\":\"$context.requestTime\", \"key2\":\"$context.path\", \"key3\":\"$context.requestId\"}",
+			expected: "{\"key1\":\"$context.requestTime\", \"key2\":\"$context.path\", \"key3\":\"$context.requestId\"}",
+		},
+		{
+			name:     "nested json: no values with missing quotes",
+			input:    "{\"key1\": \"$context.path\", \"nested.key\":{\"level1\":\"$context.url\", \"level1b\":\"$context.Status\"}}",
+			expected: "{\"key1\": \"$context.path\", \"nested.key\":{\"level1\":\"$context.url\", \"level1b\":\"$context.Status\"}}",
+		},
+		{
+			name:     "flat json: values with missing quotes",
+			input:    "{\"key1\":\"$context.requestTime\", \"key2\":$context.path, \"key3\":  $context.requestId}",
+			expected: "{\"key1\":\"$context.requestTime\", \"key2\":\"$context.path\", \"key3\":\"$context.requestId\"}",
+		},
+		{
+			name:     "nested json: values with missing quotes",
+			input:    "{\"key1\": \"$context.path\", \"nested.key\":{ \"level1\":  $context.url, \"level1b\": $context.Status}}",
+			expected: "{\"key1\": \"$context.path\", \"nested.key\":{ \"level1\":\"$context.url\", \"level1b\":\"$context.Status\"}}",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, fixAccessLogFormatMissingQuotes(test.input))
+		})
+	}
+}
