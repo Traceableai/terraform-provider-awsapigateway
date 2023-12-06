@@ -70,28 +70,28 @@ func TestFixAccessLogFormatMissingQuotes(t *testing.T) {
 	}{
 		{
 			name:     "not json",
-			input:    "\"key1\": \"value1\", \"key2\", \"key3\"",
-			expected: "\"key1\": \"value1\", \"key2\", \"key3\"",
+			input:    `"key1": "value1", "key2", "key3"`,
+			expected: `"key1": "value1", "key2", "key3"`,
 		},
 		{
 			name:     "flat json: no values with missing quotes",
-			input:    "{\"key1\":\"$context.requestTime\", \"key2\":\"$context.path\", \"key3\":\"$context.requestId\"}",
-			expected: "{\"key1\":\"$context.requestTime\", \"key2\":\"$context.path\", \"key3\":\"$context.requestId\"}",
+			input:    `{"key1":"$context.requestTime", "key2":"$context.path", "key3":"$context.requestId"}`,
+			expected: `{"key1":"$context.requestTime", "key2":"$context.path", "key3":"$context.requestId"}`,
 		},
 		{
 			name:     "nested json: no values with missing quotes",
-			input:    "{\"key1\": \"$context.path\", \"nested.key\":{\"level1\":\"$context.url\", \"level1b\":\"$context.Status\"}}",
-			expected: "{\"key1\": \"$context.path\", \"nested.key\":{\"level1\":\"$context.url\", \"level1b\":\"$context.Status\"}}",
+			input:    `{"key1": "$context.path", "nested.key":{"level1":"$context.url", "level1b":"$context.Status"}}`,
+			expected: `{"key1": "$context.path", "nested.key":{"level1":"$context.url", "level1b":"$context.Status"}}`,
 		},
 		{
 			name:     "flat json: values with missing quotes",
-			input:    "{\"key1\":\"$context.requestTime\", \"key2\":$context.path, \"key3\":  $context.requestId}",
-			expected: "{\"key1\":\"$context.requestTime\", \"key2\":\"$context.path\", \"key3\":\"$context.requestId\"}",
+			input:    `{"key1":"$context.requestTime", "key2":$context.path, "key3":  $context.requestId}`,
+			expected: `{"key1":"$context.requestTime", "key2":"$context.path", "key3":"$context.requestId"}`,
 		},
 		{
 			name:     "nested json: values with missing quotes",
-			input:    "{\"key1\": \"$context.path\"  , \"nested.key\":{ \"level1\":  $context.Status, \"level1b\" :  $context.identity.sourceIp , \"level1c\":\"v\"}}",
-			expected: "{\"key1\": \"$context.path\"  , \"nested.key\":{ \"level1\":\"$context.Status\", \"level1b\" :\"$context.identity.sourceIp\" , \"level1c\":\"v\"}}",
+			input:    `{"key1": "$context.path"  , "nested.key":{ "level1":  $context.Status, "level1b" :  $context.identity.sourceIp , "level1c":"v"}}`,
+			expected: `{"key1": "$context.path"  , "nested.key":{ "level1":"$context.Status", "level1b" :"$context.identity.sourceIp" , "level1c":"v"}}`,
 		},
 	}
 
