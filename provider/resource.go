@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	v1 "github.com/aws/aws-sdk-go-v2/service/apigateway"
@@ -250,24 +251,31 @@ func getLogGroupNamesHttpApisHelper(conn AwsApiGatewayProvider, apiStageMappingV
 	return logGroupNames
 }
 
+func fixAccessLogFormatMissingQuotes(format string) string {
+	re := regexp.MustCompile(`:\s*(\$context[.\w]*)`)
+	return string(re.ReplaceAll([]byte(format), []byte(":\"$1\"")))
+}
+
 func verifyAccessLogFormat(format string, apiIdWithStageName string, logGroupName string,
 	accessLogFormatKeysMap map[string]AccessLogFormatMap, mapDiagnostics *MapDiagnostics) bool {
 
-	var parsed map[string]string
-	var foundValues []string
-	var missingValues []string
-	if err := json.Unmarshal([]byte(format), &parsed); err != nil {
-		if err = json.Unmarshal([]byte("{"+format+"}"), &parsed); err != nil {
+	var parsed map[string]interface{}
+	fixedFormat := fixAccessLogFormatMissingQuotes(format)
+	if err := json.Unmarshal([]byte(fixedFormat), &parsed); err != nil {
+		if err = json.Unmarshal([]byte("{"+fixedFormat+"}"), &parsed); err != nil {
 			mapDiagnostics.addError(AccessLogFormatNotJson.new(), apiIdWithStageName)
 			return false
 		}
 	}
 
+	var foundValues []string
+	var missingValues []string
 	accessLogKeys := make(map[string]string)
-	for key, value := range parsed {
-		accessLogKeys[value] = key
-		if contains(AccessLogFormatMandatoryValues, value) {
-			foundValues = append(foundValues, value)
+	for key, value := range Flatten(parsed) {
+		valueStr := value.(string)
+		accessLogKeys[valueStr] = key
+		if contains(AccessLogFormatMandatoryValues, valueStr) {
+			foundValues = append(foundValues, valueStr)
 		}
 	}
 
