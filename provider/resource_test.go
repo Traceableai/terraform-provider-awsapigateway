@@ -90,8 +90,8 @@ func TestFixAccessLogFormatMissingQuotes(t *testing.T) {
 		},
 		{
 			name:     "nested json: values with missing quotes",
-			input:    "{\"key1\": \"$context.path\", \"nested.key\":{ \"level1\":  $context.url, \"level1b\": $context.Status}}",
-			expected: "{\"key1\": \"$context.path\", \"nested.key\":{ \"level1\":\"$context.url\", \"level1b\":\"$context.Status\"}}",
+			input:    "{\"key1\": \"$context.path\"  , \"nested.key\":{ \"level1\":  $context.Status, \"level1b\" :  $context.identity.sourceIp , \"level1c\":\"v\"}}",
+			expected: "{\"key1\": \"$context.path\"  , \"nested.key\":{ \"level1\":\"$context.Status\", \"level1b\" :\"$context.identity.sourceIp\" , \"level1c\":\"v\"}}",
 		},
 	}
 
