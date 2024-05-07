@@ -5,7 +5,8 @@ The AWS-API-Gateway-Resource Provider is a plugin for Terraform that allows work
 For a more comprehensive explanation see [awsapigateway_resource](./docs/resources/awsapigateway_resource.md) documentation.
 
 ## Usage
-
+The first example will track all apis defined by the cross account role arn `test-arn-1` except for the api with id `api1`.
+The second example will only track apis with id `api1` and `api2` from the account where the deployment is made
 ```hcl
 terraform {
   required_providers {
@@ -16,10 +17,21 @@ terraform {
   }
 }
 
+resource "awsapigateway_resouce" "traceable-example-1" {
+  identifier                 = uuid()
+  ignore_access_log_settings = false
+  accounts {
+    region                 = "us-east-2"
+    api_list               = ["api1"]
+    cross_account_role_arn = "test-arn-1"
+    exclude                = true
+  }
+}
+
 resource "awsapigateway_resouce" "traceable-example-2" {
   identifier                 = uuid()
   ignore_access_log_settings = false
-  account {
+  accounts {
     region                 = "us-east-1"
     api_list               = ["api1", "api2"]
     cross_account_role_arn = ""
