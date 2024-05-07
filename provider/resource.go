@@ -7,12 +7,16 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Traceableai/terraform-provider-awsapigateway/provider/keys"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	v1 "github.com/aws/aws-sdk-go-v2/service/apigateway"
 	v2 "github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 func AwsApiGatewayResource() *schema.Resource {
@@ -23,52 +27,95 @@ func AwsApiGatewayResource() *schema.Resource {
 		DeleteContext: resourceDelete,
 
 		Schema: map[string]*schema.Schema{
-			"api_gateways": {
-				Type:     schema.TypeList,
-				Required: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
-			},
-			"action": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				Default:      string(INCLUDE),
-				ValidateFunc: validation.StringInSlice(ApiGatewayActions, false),
-			},
-			"identifier": {
+			keys.Identifier: {
 				Type:     schema.TypeString,
 				Optional: true,
 				Default:  "",
 			},
-			"ignore_access_log_settings": {
+			keys.IgnoreAccessLogSettings: {
 				Type:     schema.TypeBool,
 				Optional: true,
 				Default:  false,
 			},
-			"log_group_names": {
+			keys.LogGroupNames: {
 				Type:     schema.TypeList,
 				Computed: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
+			},
+			keys.Accounts: {
+				Type:     schema.TypeList,
+				Required: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						keys.Region: {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						keys.ApiList: {
+							Type:     schema.TypeList,
+							Required: true,
+							Elem:     &schema.Schema{Type: schema.TypeString},
+						},
+						keys.CrossAccountRoleArn: {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						keys.Exclude: {
+							Type:     schema.TypeBool,
+							Required: true,
+						},
+					},
+				},
 			},
 		},
 	}
 }
 
 func resourceCreateUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	apiGateways := d.Get("api_gateways").([]interface{})
-	action := d.Get("action").(string)
-	ignoreAccessLogSettings := d.Get("ignore_access_log_settings").(bool)
+	logGroupNames := make([]string, 0)
+	accounts := d.Get(keys.Accounts).([]interface{})
+
 	mapDiagnostics := &MapDiagnostics{
 		diagnostics:      diag.Diagnostics{},
 		warnDiagnostics:  make(map[string][]string),
 		errorDiagnostics: make(map[string][]string),
 	}
-	logGroupNames := getLogGroupNames(apiGateways, action == string(EXCLUDE), ignoreAccessLogSettings, meta, mapDiagnostics)
+
+	conn := meta.(AwsApiGatewayProvider)
+
+	for _, account := range accounts {
+		acc := account.(map[string]interface{})
+		region := acc[keys.Region].(string)
+		apiList := acc[keys.ApiList].([]interface{})
+		crossAccRoleArn := acc[keys.CrossAccountRoleArn].(string)
+		exclude := acc[keys.Exclude].(bool)
+
+		ignoreAccessLogSettings := d.Get(keys.IgnoreAccessLogSettings).(bool)
+		// if cross account role arn is provided, then reinitialise client with an assumed role
+		if len(crossAccRoleArn) > 0 {
+			cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+			if err != nil {
+				mapDiagnostics.add(errorDiagnostic(err.Error()))
+				continue
+			}
+
+			stsSvc := sts.NewFromConfig(cfg)
+			creds := stscreds.NewAssumeRoleProvider(stsSvc, crossAccRoleArn)
+			cfg.Credentials = aws.NewCredentialsCache(creds)
+
+			conn = newFromConfig(cfg)
+		}
+
+		logGroupNames = append(logGroupNames, getLogGroupNames(apiList, exclude, ignoreAccessLogSettings, conn, mapDiagnostics)...)
+	}
+
 	if d.Id() == "" {
 		d.SetId(uuid.New().String())
 	}
-	if err := d.Set("log_group_names", logGroupNames); err != nil {
+	if err := d.Set(keys.LogGroupNames, logGroupNames); err != nil {
 		mapDiagnostics.add(errorDiagnostic(err.Error()))
 	}
+
 	return mapDiagnostics.getDiagnostics()
 }
 
@@ -81,7 +128,7 @@ func resourceDelete(ctx context.Context, d *schema.ResourceData, meta interface{
 	return nil
 }
 
-func getLogGroupNames(apiGateways []interface{}, exclude bool, ignoreAccessLogSettings bool, meta interface{}, mapDiagnostics *MapDiagnostics) []string {
+func getLogGroupNames(apiGateways []interface{}, exclude bool, ignoreAccessLogSettings bool, conn AwsApiGatewayProvider, mapDiagnostics *MapDiagnostics) []string {
 	var summary string
 	if !exclude && len(apiGateways) == 0 {
 		summary = "api_gateways cannot be empty when action is include."
@@ -111,7 +158,6 @@ func getLogGroupNames(apiGateways []interface{}, exclude bool, ignoreAccessLogSe
 		}
 	}
 
-	conn := meta.(AwsApiGatewayProvider)
 	accessLogFormatKeysMap := make(map[string]AccessLogFormatMap)
 	logGroupNames := getLogGroupNamesRestApis(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings, accessLogFormatKeysMap, mapDiagnostics)
 	apiGatewayV2LogGroupNames := getLogGroupNamesHttpApis(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings, accessLogFormatKeysMap, mapDiagnostics)

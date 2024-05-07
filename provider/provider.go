@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/Traceableai/terraform-provider-awsapigateway/provider/keys"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
@@ -18,23 +19,23 @@ func Provider() *schema.Provider {
 func createProvider(configureContextFunc schema.ConfigureContextFunc) *schema.Provider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
-			"profile": {
+			keys.Profile: {
 				Type:     schema.TypeString,
 				Optional: true,
 				Default:  "",
 			},
-			"region": {
+			keys.Region: {
 				Type:     schema.TypeString,
 				Optional: true,
 				Default:  "",
 			},
-			"assume_role": {
+			keys.AssumeRole: {
 				Type:     schema.TypeList,
 				Optional: true,
 				MaxItems: 1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"role_arn": {
+						keys.RoleArn: {
 							Type:     schema.TypeString,
 							Required: true,
 						},
@@ -44,7 +45,7 @@ func createProvider(configureContextFunc schema.ConfigureContextFunc) *schema.Pr
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
-			"awsapigateway_resource": AwsApiGatewayResource(),
+			keys.AwsApiGatewayResource: AwsApiGatewayResource(),
 		},
 
 		ConfigureContextFunc: configureContextFunc,

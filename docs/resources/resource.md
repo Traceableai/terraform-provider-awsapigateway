@@ -17,11 +17,10 @@ description: |-
 
 ### Required
 
-- `api_gateways` (List of String)
+- `accounts` (Block List, Min: 1) (see [below for nested schema](#nestedblock--accounts))
 
 ### Optional
 
-- `action` (String)
 - `identifier` (String)
 - `ignore_access_log_settings` (Boolean)
 
@@ -30,4 +29,12 @@ description: |-
 - `id` (String) The ID of this resource.
 - `log_group_names` (List of String)
 
+<a id="nestedblock--accounts"></a>
+### Nested Schema for `accounts`
 
+Required:
+
+- `api_list` (List of String)
+- `cross_account_role_arn` (String)
+- `exclude` (Boolean)
+- `region` (String)
