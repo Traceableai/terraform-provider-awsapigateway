@@ -11,13 +11,20 @@ terraform {
   required_providers {
     awsapigateway = {
       source  = "Traceableai/awsapigateway"
-      version = "~> 0.1.0"
+      version = "0.3.0"
     }
   }
 }
 
-provider "awsapigateway" {
-  region = "us-east-1"
+resource "awsapigateway_resouce" "traceable-example-2" {
+  identifier                 = uuid()
+  ignore_access_log_settings = false
+  account {
+    region                 = "us-east-1"
+    api_list               = ["api1", "api2"]
+    cross_account_role_arn = ""
+    exclude                = false
+  }
 }
 ```
 
