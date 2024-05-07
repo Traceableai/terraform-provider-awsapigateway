@@ -26,7 +26,7 @@ resource "awsapigateway_resource" "traceable-example-1" {
 resource "awsapigateway_resouce" "traceable-example-2" {
   identifier                 = uuid()
   ignore_access_log_settings = false
-  account {
+  accounts {
     region                 = "us-east-1"
     api_list               = ["api1", "api2"]
     cross_account_role_arn = ""
