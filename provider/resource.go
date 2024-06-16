@@ -81,8 +81,6 @@ func resourceCreateUpdate(ctx context.Context, d *schema.ResourceData, meta inte
 		errorDiagnostics: make(map[string][]string),
 	}
 
-	conn := meta.(AwsApiGatewayProvider)
-
 	for _, account := range accounts {
 		acc := account.(map[string]interface{})
 		region := acc[keys.Region].(string)
@@ -92,8 +90,9 @@ func resourceCreateUpdate(ctx context.Context, d *schema.ResourceData, meta inte
 
 		ignoreAccessLogSettings := d.Get(keys.IgnoreAccessLogSettings).(bool)
 		// if cross account role arn is provided, then reinitialise client with an assumed role
+
+		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
 		if len(crossAccRoleArn) > 0 {
-			cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
 			if err != nil {
 				mapDiagnostics.add(errorDiagnostic(err.Error()))
 				continue
@@ -103,8 +102,8 @@ func resourceCreateUpdate(ctx context.Context, d *schema.ResourceData, meta inte
 			creds := stscreds.NewAssumeRoleProvider(stsSvc, crossAccRoleArn)
 			cfg.Credentials = aws.NewCredentialsCache(creds)
 
-			conn = newFromConfig(cfg)
 		}
+		conn := newFromConfig(cfg)
 
 		logGroupNames = append(logGroupNames, getLogGroupNames(apiList, exclude, ignoreAccessLogSettings, conn, mapDiagnostics)...)
 	}
