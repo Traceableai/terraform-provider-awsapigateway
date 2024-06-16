@@ -74,7 +74,6 @@ func AwsApiGatewayResource() *schema.Resource {
 func resourceCreateUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	logGroupNames := make([]string, 0)
 	accounts := d.Get(keys.Accounts).([]interface{})
-
 	mapDiagnostics := &MapDiagnostics{
 		diagnostics:      diag.Diagnostics{},
 		warnDiagnostics:  make(map[string][]string),
@@ -89,20 +88,20 @@ func resourceCreateUpdate(ctx context.Context, d *schema.ResourceData, meta inte
 		exclude := acc[keys.Exclude].(bool)
 
 		ignoreAccessLogSettings := d.Get(keys.IgnoreAccessLogSettings).(bool)
-		// if cross account role arn is provided, then reinitialise client with an assumed role
 
 		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
-		if len(crossAccRoleArn) > 0 {
-			if err != nil {
-				mapDiagnostics.add(errorDiagnostic(err.Error()))
-				continue
-			}
+		if err != nil {
+			mapDiagnostics.add(errorDiagnostic(err.Error()))
+			continue
+		}
 
+		// if cross account role arn is provided, then reinitialise client with an assumed role
+		if len(crossAccRoleArn) > 0 {
 			stsSvc := sts.NewFromConfig(cfg)
 			creds := stscreds.NewAssumeRoleProvider(stsSvc, crossAccRoleArn)
 			cfg.Credentials = aws.NewCredentialsCache(creds)
-
 		}
+
 		conn := newFromConfig(cfg)
 
 		logGroupNames = append(logGroupNames, getLogGroupNames(apiList, exclude, ignoreAccessLogSettings, conn, mapDiagnostics)...)
