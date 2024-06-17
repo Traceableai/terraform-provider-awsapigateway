@@ -23,7 +23,7 @@ resource "awsapigateway_resource" "traceable-example-1" {
 }
 
 # For a single account
-resource "awsapigateway_resouce" "traceable-example-2" {
+resource "awsapigateway_resource" "traceable-example-2" {
   identifier                 = uuid()
   ignore_access_log_settings = false
   accounts {
