@@ -71,7 +71,7 @@ func AwsApiGatewayResource() *schema.Resource {
 	}
 }
 
-func resourceCreateUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func resourceCreateUpdate(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	logGroupNames := make([]string, 0)
 	accounts := d.Get(keys.Accounts).([]interface{})
 	mapDiagnostics := &MapDiagnostics{
@@ -117,11 +117,11 @@ func resourceCreateUpdate(ctx context.Context, d *schema.ResourceData, meta inte
 	return mapDiagnostics.getDiagnostics()
 }
 
-func resourceRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func resourceRead(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
 	return nil
 }
 
-func resourceDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func resourceDelete(_ context.Context, d *schema.ResourceData, _ interface{}) diag.Diagnostics {
 	d.SetId("")
 	return nil
 }
@@ -173,7 +173,8 @@ func getLogGroupNamesRestApis(conn AwsApiGatewayProvider, apiAllStages []string,
 		if err != nil {
 			summary := fmt.Sprintf("Error while invoking getRestApis sdk call: %s", err.Error())
 			mapDiagnostics.add(errorDiagnostic(summary))
-			continue
+			// restApisPaginator.HasMorePages() will return true even if there are connection issues
+			return []string{}
 		}
 		for _, restApi := range res.Items {
 			apiId := *restApi.Id

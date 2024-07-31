@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-
 	"github.com/Traceableai/terraform-provider-awsapigateway/provider/keys"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -43,7 +42,6 @@ func createProvider(configureContextFunc schema.ConfigureContextFunc) *schema.Pr
 				},
 			},
 		},
-
 		ResourcesMap: map[string]*schema.Resource{
 			keys.AwsApiGatewayResource: AwsApiGatewayResource(),
 		},
