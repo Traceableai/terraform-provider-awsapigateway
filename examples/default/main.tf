@@ -20,11 +20,7 @@ resource "awsapigateway_resource" "traceable-example-1" {
       exclude                = accounts.value["exclude"]
     }
   }
-
-  timeouts {
-    create = "10s"
-    update = "10s"
-  }
+  timeout = "10s"
 }
 
 # For a single account
@@ -37,4 +33,5 @@ resource "awsapigateway_resource" "traceable-example-2" {
     cross_account_role_arn = ""
     exclude                = false
   }
+  timeout = "1s"
 }
