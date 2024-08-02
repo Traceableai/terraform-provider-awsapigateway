@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/Traceableai/terraform-provider-awsapigateway/provider/keys"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -42,6 +43,11 @@ func AwsApiGatewayResource() *schema.Resource {
 				Computed: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
+			keys.Timeout: {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  "1m",
+			},
 			keys.Accounts: {
 				Type:     schema.TypeList,
 				Required: true,
@@ -71,14 +77,26 @@ func AwsApiGatewayResource() *schema.Resource {
 	}
 }
 
-func resourceCreateUpdate(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	logGroupNames := make([]string, 0)
-	accounts := d.Get(keys.Accounts).([]interface{})
+func resourceCreateUpdate(
+	ctx context.Context,
+	d *schema.ResourceData,
+	_ interface{}) diag.Diagnostics {
 	mapDiagnostics := &MapDiagnostics{
 		diagnostics:      diag.Diagnostics{},
 		warnDiagnostics:  make(map[string][]string),
 		errorDiagnostics: make(map[string][]string),
 	}
+
+	logGroupNames := make([]string, 0)
+	accounts := d.Get(keys.Accounts).([]interface{})
+	timeoutStr := d.Get(keys.Timeout).(string)
+	timeout, err := time.ParseDuration(timeoutStr)
+	if err != nil {
+		mapDiagnostics.add(errorDiagnostic(err.Error()))
+		return mapDiagnostics.getDiagnostics()
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	for _, account := range accounts {
 		acc := account.(map[string]interface{})
@@ -89,7 +107,7 @@ func resourceCreateUpdate(_ context.Context, d *schema.ResourceData, meta interf
 
 		ignoreAccessLogSettings := d.Get(keys.IgnoreAccessLogSettings).(bool)
 
-		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+		cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 		if err != nil {
 			mapDiagnostics.add(errorDiagnostic(err.Error()))
 			continue
@@ -104,7 +122,8 @@ func resourceCreateUpdate(_ context.Context, d *schema.ResourceData, meta interf
 
 		conn := newFromConfig(cfg)
 
-		logGroupNames = append(logGroupNames, getLogGroupNames(apiList, exclude, ignoreAccessLogSettings, conn, mapDiagnostics)...)
+		logGroupNames = append(logGroupNames,
+			getLogGroupNames(ctx, apiList, exclude, ignoreAccessLogSettings, conn, mapDiagnostics)...)
 	}
 
 	if d.Id() == "" {
@@ -126,7 +145,13 @@ func resourceDelete(_ context.Context, d *schema.ResourceData, _ interface{}) di
 	return nil
 }
 
-func getLogGroupNames(apiGateways []interface{}, exclude bool, ignoreAccessLogSettings bool, conn AwsApiGatewayProvider, mapDiagnostics *MapDiagnostics) []string {
+func getLogGroupNames(
+	ctx context.Context,
+	apiGateways []interface{},
+	exclude bool,
+	ignoreAccessLogSettings bool,
+	conn AwsApiGatewayProvider,
+	mapDiagnostics *MapDiagnostics) []string {
 	var summary string
 	if !exclude && len(apiGateways) == 0 {
 		summary = "api_gateways cannot be empty when action is include."
@@ -157,19 +182,43 @@ func getLogGroupNames(apiGateways []interface{}, exclude bool, ignoreAccessLogSe
 	}
 
 	accessLogFormatKeysMap := make(map[string]AccessLogFormatMap)
-	logGroupNames := getLogGroupNamesRestApis(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings, accessLogFormatKeysMap, mapDiagnostics)
-	apiGatewayV2LogGroupNames := getLogGroupNamesHttpApis(conn, apiAllStages, apiWithStage, exclude, ignoreAccessLogSettings, accessLogFormatKeysMap, mapDiagnostics)
+	logGroupNames := getLogGroupNamesRestApis(
+		ctx,
+		conn,
+		apiAllStages,
+		apiWithStage,
+		exclude,
+		ignoreAccessLogSettings,
+		accessLogFormatKeysMap,
+		mapDiagnostics)
+
+	apiGatewayV2LogGroupNames := getLogGroupNamesHttpApis(
+		ctx,
+		conn,
+		apiAllStages,
+		apiWithStage,
+		exclude,
+		ignoreAccessLogSettings,
+		accessLogFormatKeysMap,
+		mapDiagnostics)
 	return removeDuplicates(append(logGroupNames, apiGatewayV2LogGroupNames...))
 }
 
-func getLogGroupNamesRestApis(conn AwsApiGatewayProvider, apiAllStages []string, apiWithStage map[string][]string,
-	exclude bool, ignoreAccessLogSettings bool, accessLogFormatKeysMap map[string]AccessLogFormatMap, mapDiagnostics *MapDiagnostics) []string {
+func getLogGroupNamesRestApis(
+	ctx context.Context,
+	conn AwsApiGatewayProvider,
+	apiAllStages []string,
+	apiWithStage map[string][]string,
+	exclude bool,
+	ignoreAccessLogSettings bool,
+	accessLogFormatKeysMap map[string]AccessLogFormatMap,
+	mapDiagnostics *MapDiagnostics) []string {
 	// apiStageMappingRest is a map of api id to list of api stages that need to be considered
 	// if the value list is empty, it means that all stages in this api should be considered
 	apiStageMappingRest := make(map[string][]string)
 	restApisPaginator := conn.getAwsGetRestApisPaginator()
 	for restApisPaginator.HasMorePages() {
-		res, err := restApisPaginator.NextPage(context.TODO())
+		res, err := restApisPaginator.NextPage(ctx)
 		if err != nil {
 			summary := fmt.Sprintf("Error while invoking getRestApis sdk call: %s", err.Error())
 			mapDiagnostics.add(errorDiagnostic(summary))
@@ -186,18 +235,32 @@ func getLogGroupNamesRestApis(conn AwsApiGatewayProvider, apiAllStages []string,
 			}
 		}
 	}
-	logGroupNames := getLogGroupNamesRestApisHelper(conn, apiStageMappingRest, exclude, ignoreAccessLogSettings, accessLogFormatKeysMap, mapDiagnostics)
+	logGroupNames := getLogGroupNamesRestApisHelper(
+		ctx,
+		conn,
+		apiStageMappingRest,
+		exclude,
+		ignoreAccessLogSettings,
+		accessLogFormatKeysMap,
+		mapDiagnostics)
 	return logGroupNames
 }
 
-func getLogGroupNamesHttpApis(conn AwsApiGatewayProvider, apiAllStages []string, apiWithStage map[string][]string, exclude bool,
-	ignoreAccessLogSettings bool, accessLogFormatKeysMap map[string]AccessLogFormatMap, mapDiagnostics *MapDiagnostics) []string {
+func getLogGroupNamesHttpApis(
+	ctx context.Context,
+	conn AwsApiGatewayProvider,
+	apiAllStages []string,
+	apiWithStage map[string][]string,
+	exclude bool,
+	ignoreAccessLogSettings bool,
+	accessLogFormatKeysMap map[string]AccessLogFormatMap,
+	mapDiagnostics *MapDiagnostics) []string {
 	var summary string
 	// apiStageMappingRest is a map of api id to list of api stages that need to be considered
 	// if the value list is empty, it means that all stages in this api should be considered
 	apiStageMappingV2 := make(map[string][]string)
 	apiGatewayV2Client := conn.getApiGatewayV2Client()
-	res, err := apiGatewayV2Client.GetApis(context.TODO(), &v2.GetApisInput{})
+	res, err := apiGatewayV2Client.GetApis(ctx, &v2.GetApisInput{})
 	if err != nil {
 		summary = fmt.Sprintf("Error while invoking getApis sdk call: %s", err.Error())
 		mapDiagnostics.add(errorDiagnostic(summary))
@@ -213,17 +276,30 @@ func getLogGroupNamesHttpApis(conn AwsApiGatewayProvider, apiAllStages []string,
 		}
 	}
 	if !ignoreAccessLogSettings {
-		return getLogGroupNamesHttpApisHelper(conn, apiStageMappingV2, exclude, accessLogFormatKeysMap, mapDiagnostics)
+		return getLogGroupNamesHttpApisHelper(
+			ctx,
+			conn,
+			apiStageMappingV2,
+			exclude,
+			accessLogFormatKeysMap,
+			mapDiagnostics)
 	}
 	return []string{}
 }
 
-func getLogGroupNamesRestApisHelper(conn AwsApiGatewayProvider, apiStageMappingRest map[string][]string, exclude bool,
-	ignoreAccessLogSettings bool, accessLogFormatKeysMap map[string]AccessLogFormatMap, mapDiagnostics *MapDiagnostics) []string {
+func getLogGroupNamesRestApisHelper(
+	ctx context.Context,
+	conn AwsApiGatewayProvider,
+	apiStageMappingRest map[string][]string,
+	exclude bool,
+	ignoreAccessLogSettings bool,
+	accessLogFormatKeysMap map[string]AccessLogFormatMap,
+	mapDiagnostics *MapDiagnostics) []string {
+
 	var logGroupNames []string
 	apiGatewayClient := conn.getApiGatewayClient()
 	for apiId, apiStages := range apiStageMappingRest {
-		res, err := apiGatewayClient.GetStages(context.TODO(), &v1.GetStagesInput{
+		res, err := apiGatewayClient.GetStages(ctx, &v1.GetStagesInput{
 			RestApiId: &apiId,
 		})
 		if err != nil {
@@ -264,12 +340,17 @@ func getLogGroupNamesRestApisHelper(conn AwsApiGatewayProvider, apiStageMappingR
 	return logGroupNames
 }
 
-func getLogGroupNamesHttpApisHelper(conn AwsApiGatewayProvider, apiStageMappingV2 map[string][]string, exclude bool,
-	accessLogFormatKeysMap map[string]AccessLogFormatMap, mapDiagnostics *MapDiagnostics) []string {
+func getLogGroupNamesHttpApisHelper(
+	ctx context.Context,
+	conn AwsApiGatewayProvider,
+	apiStageMappingV2 map[string][]string,
+	exclude bool,
+	accessLogFormatKeysMap map[string]AccessLogFormatMap,
+	mapDiagnostics *MapDiagnostics) []string {
 	var logGroupNames []string
 	apiGatewayV2Client := conn.getApiGatewayV2Client()
 	for apiId, apiStages := range apiStageMappingV2 {
-		res, err := apiGatewayV2Client.GetStages(context.TODO(), &v2.GetStagesInput{
+		res, err := apiGatewayV2Client.GetStages(ctx, &v2.GetStagesInput{
 			ApiId: &apiId,
 		})
 		if err != nil {

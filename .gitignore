@@ -41,3 +41,6 @@ terraform.rc
 
 # GoReleaser build files
 dist/
+
+# Terraform lock files
+.terraform.lock.hcl

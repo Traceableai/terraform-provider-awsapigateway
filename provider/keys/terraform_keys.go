@@ -13,4 +13,5 @@ const (
 	AssumeRole              = "assume_role"
 	Profile                 = "profile"
 	RoleArn                 = "role_arn"
+	Timeout                 = "timeout"
 )
