@@ -81,6 +81,16 @@ provider_installation {
 
 ```
 
+## Logging
+
+Terraform providers depend on tflog package for logging, ref: https://developer.hashicorp.com/terraform/tutorials/providers-plugin-framework/providers-plugin-framework-logging.
+The log level is controlled by `TF_LOG` environment variable.
+
+For example,
+```shell
+TF_LOG=DEBUG terraform apply --auto-approve
+```
+
 ## Testing
 
 ```shell

@@ -16,6 +16,7 @@ import (
 	v2 "github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/google/uuid"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -98,8 +99,11 @@ func resourceCreateUpdate(
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	tflog.Info(ctx, "Initializing provider")
 	for _, account := range accounts {
 		acc := account.(map[string]interface{})
+		tflog.Debug(ctx, "fetching details of account", acc)
+
 		region := acc[keys.Region].(string)
 		apiList := acc[keys.ApiList].([]interface{})
 		crossAccRoleArn := acc[keys.CrossAccountRoleArn].(string)
@@ -109,12 +113,14 @@ func resourceCreateUpdate(
 
 		cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 		if err != nil {
+			tflog.Error(ctx, fmt.Sprintf("Error loading AWS configuration: %v", err))
 			mapDiagnostics.add(errorDiagnostic(err.Error()))
 			continue
 		}
 
 		// if cross account role arn is provided, then reinitialise client with an assumed role
 		if len(crossAccRoleArn) > 0 {
+			tflog.Info(ctx, "cross account role arn found, using that to initialize client")
 			stsSvc := sts.NewFromConfig(cfg)
 			creds := stscreds.NewAssumeRoleProvider(stsSvc, crossAccRoleArn)
 			cfg.Credentials = aws.NewCredentialsCache(creds)
