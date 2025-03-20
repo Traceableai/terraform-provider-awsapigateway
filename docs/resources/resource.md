@@ -23,6 +23,7 @@ description: |-
 
 - `identifier` (String)
 - `ignore_access_log_settings` (Boolean)
+- `timeout` (String)
 
 ### Read-Only
 
