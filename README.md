@@ -42,6 +42,15 @@ resource "awsapigateway_resouce" "traceable-example-2" {
 
 See the complete example [here](./examples/default)
 
+## Development
+On schema updates, the docs under docs/resources the docs directory should be updated. The terraform registry
+depends on this and will not accept newer releases if these documentations are not up to date.
+
+### Generating documentation
+We use [tfplugindocs](https://github.com/hashicorp/terraform-plugin-docs) for generating the doumentation and it can
+be done by invoking the main function in the root directory.
+More information here: https://github.com/hashicorp/terraform-plugin-docs
+
 ## Dev Testing
 Terraform providers local build can be used for terraform deployments instead of the published ones. Need to update 
 the local `~/.terraformrc` file with the location of the build. 
