@@ -93,6 +93,11 @@ func TestFixAccessLogFormatMissingQuotes(t *testing.T) {
 			input:    `{"key1": "$context.path"  , "nested.key":{ "level1":  $context.Status, "level1b" :  $context.identity.sourceIp , "level1c":"v"}}`,
 			expected: `{"key1": "$context.path"  , "nested.key":{ "level1":"$context.Status", "level1b" :"$context.identity.sourceIp" , "level1c":"v"}}`,
 		},
+		{
+			name:     "single quotes instead of double quotes",
+			input:    `{'key1': '$context.path'  , 'nested.key':{ 'level1':  $context.Status, 'level1b' :  $context.identity.sourceIp , 'level1c':'v'}}`,
+			expected: `{"key1": "$context.path"  , "nested.key":{ "level1":"$context.Status", "level1b" :"$context.identity.sourceIp" , "level1c":"v"}}`,
+		},
 	}
 
 	for _, test := range tests {

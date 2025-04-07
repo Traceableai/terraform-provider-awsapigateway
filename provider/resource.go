@@ -384,6 +384,7 @@ func getLogGroupNamesHttpApisHelper(
 }
 
 func fixAccessLogFormatMissingQuotes(format string) string {
+	format = strings.ReplaceAll(format, "'", "\"")
 	re := regexp.MustCompile(`:\s*(\$context[.\w]*)`)
 	return string(re.ReplaceAll([]byte(format), []byte(":\"$1\"")))
 }
