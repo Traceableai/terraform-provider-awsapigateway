@@ -315,16 +315,21 @@ func getLogGroupNamesRestApisHelper(
 		}
 		for _, stage := range res.Item {
 			stageName := *(stage.StageName)
+			tflog.Debug(ctx, fmt.Sprintf("Polling details for %s api %s stage", apiId, stageName))
 			apiIdWithStageName := strings.Join([]string{apiId, stageName}, "/")
 			if len(apiStages) > 0 && contains(apiStages, stageName) == exclude {
 				continue
 			}
 			if settings, ok := stage.MethodSettings["*/*"]; ok {
-				if *(settings.LoggingLevel) == "INFO" && settings.DataTraceEnabled {
+				var logLevel string
+				if settings.LoggingLevel != nil {
+					logLevel = *settings.LoggingLevel
+				}
+				if logLevel == "INFO" && settings.DataTraceEnabled {
 					logGroupNames = append(logGroupNames, getExecutionLogGroupName(apiId, stageName))
-				} else if *(settings.LoggingLevel) == "INFO" {
+				} else if logLevel == "INFO" {
 					mapDiagnostics.addError(FullRequestAndResponseLogNotEnabled.new(), apiIdWithStageName)
-				} else if *(settings.LoggingLevel) == "ERROR" {
+				} else if logLevel == "ERROR" {
 					mapDiagnostics.addError(ExecutionLogErrorOnly.new(), apiIdWithStageName)
 				} else {
 					mapDiagnostics.addError(ExecutionLogNotEnabled.new(), apiIdWithStageName)

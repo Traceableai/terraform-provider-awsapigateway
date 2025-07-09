@@ -63,7 +63,7 @@ brew install goreleaser
 ```
 2. Make dev build
 ```shell
-goreleaser build --snapshot
+goreleaser build --snapshot --clean
 ```
 3. Update `~/.terraformrc` with the location of the build
 GoReleaser will publish artifacts for all the different runtimes. Find the correct build and add it's path in the above 
